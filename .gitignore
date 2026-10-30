@@ -1,0 +1,7 @@
+# Download artifacts belong in GitHub Releases, not Git history.
+*.zip
+*.dll
+*.pak
+*.utoc
+*.ucas
+p4env

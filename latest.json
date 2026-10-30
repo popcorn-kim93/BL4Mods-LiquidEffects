@@ -1,0 +1,16 @@
+{
+  "version": "0.17.1",
+  "tag": "v0.17.1",
+  "archives": [
+    {
+      "name": "PXR-0.17.1-Manual.zip",
+      "bytes": 358060,
+      "sha256": "acc00fbb122e9a83c4dcb562e6429d3cff5a7d638fda7e15ff15940be26964a4"
+    },
+    {
+      "name": "PXR-0.17.1-Vortex.zip",
+      "bytes": 360419,
+      "sha256": "28cb38ec55b6e4a62710cfdad5b4b4efd4e5aa9fb8dc7c3c7fc31182a3e45d52"
+    }
+  ]
+}

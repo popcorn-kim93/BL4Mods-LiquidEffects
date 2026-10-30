@@ -1,0 +1,83 @@
+name: Publish release packages to Nexus
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-${{ github.event.release.tag_name }}
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    if: vars.NEXUS_AUTO_UPLOAD == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        package: [Vortex, Manual]
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.release.tag_name }}
+      PACKAGE: ${{ matrix.package }}
+      VORTEX_FILE_ID: ${{ vars.NEXUS_VORTEX_FILE_ID }}
+      MANUAL_FILE_ID: ${{ vars.NEXUS_MANUAL_FILE_ID }}
+      MOD_ID: ${{ vars.NEXUS_MOD_ID }}
+    steps:
+      - name: Validate configuration and download exact release assets
+        id: files
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]
+          [[ "$MOD_ID" =~ ^[0-9]+$ ]]
+          file_id="$VORTEX_FILE_ID"
+          category=main
+          primary=true
+          if [[ "$PACKAGE" == Manual ]]; then
+            file_id="$MANUAL_FILE_ID"
+            category=optional
+            primary=false
+          fi
+          [[ "$file_id" =~ ^[0-9]+$ ]]
+          version="${RELEASE_TAG#v}"
+          filename="PXR-${version}-${PACKAGE}.zip"
+          gh release download "$RELEASE_TAG" --pattern "$filename" --pattern SHA256SUMS.txt --pattern release-manifest.json
+          python3 - "$filename" "$version" <<'PY'
+          import hashlib,json,sys
+          from pathlib import Path
+          filename,version=sys.argv[1:]
+          manifest=json.loads(Path('release-manifest.json').read_text())
+          assert manifest['version']==version
+          row=next(r for r in manifest['archives'] if r['name']==filename)
+          digest=hashlib.sha256(Path(filename).read_bytes()).hexdigest()
+          assert digest==row['sha256']
+          sums={line.split('  ',1)[1]:line.split('  ',1)[0] for line in Path('SHA256SUMS.txt').read_text().splitlines()}
+          assert sums[filename]==digest
+          assert sums['release-manifest.json']==hashlib.sha256(Path('release-manifest.json').read_bytes()).hexdigest()
+          PY
+          echo "filename=$filename" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "file_id=$file_id" >> "$GITHUB_OUTPUT"
+          echo "category=$category" >> "$GITHUB_OUTPUT"
+          echo "primary=$primary" >> "$GITHUB_OUTPUT"
+      - name: Upload identical ZIP to Nexus
+        uses: Nexus-Mods/upload-action@98532f7670c27cbecc78fae03fa3e278147827e2
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          file_id: ${{ steps.files.outputs.file_id }}
+          mod_id: ${{ vars.NEXUS_MOD_ID }}
+          filename: ${{ steps.files.outputs.filename }}
+          display_name: PXR Liquid Effects — ${{ matrix.package }}
+          description: See the GitHub release notes and installation guide for this version.
+          version: ${{ steps.files.outputs.version }}
+          category: ${{ steps.files.outputs.category }}
+          allow_mod_manager_download: ${{ steps.files.outputs.primary }}
+          primary_mod_manager_download: ${{ steps.files.outputs.primary }}
+          archive_existing_version: 'false'
+          update_mod_version: 'false'
